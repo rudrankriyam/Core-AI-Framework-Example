@@ -8,7 +8,8 @@ final class AppleLanguageWorkspaceModel {
     let runCoordinator: CoreAIRunLifecycleCoordinator
     private(set) var modelName: String?
     private(set) var response = ""
-    private(set) var statusMessage = "Import an Apple-exported Qwen resource bundle."
+    private(set) var transcript: [AppleLanguageTranscriptMessage] = []
+    private(set) var statusMessage = "Import an Apple-exported language-model resource bundle."
     private(set) var isLoadingModel = false
     private(set) var isGenerating = false
     private(set) var isResettingSession = false
@@ -35,7 +36,7 @@ final class AppleLanguageWorkspaceModel {
         self.runContext = runContext ?? .workspaceDefault(
             experienceID: "apple-language-\(example.rawValue)",
             title: example.title,
-            modelIdentifier: "qwen3-0.6b"
+            modelIdentifier: example.modelIdentifier
         )
         self.runCoordinator = runCoordinator ?? CoreAIRunLifecycleCoordinator()
     }
@@ -71,8 +72,9 @@ final class AppleLanguageWorkspaceModel {
                 modelIdentity: url.lastPathComponent
             )
             response = ""
+            transcript = []
             clearError()
-            statusMessage = "Qwen is ready for a new session."
+            statusMessage = "\(example.title) is ready for a chat session."
         } catch {
             present(error)
         }
@@ -82,6 +84,22 @@ final class AppleLanguageWorkspaceModel {
         guard generationTask == nil, canGenerate else { return }
         let submittedPrompt = normalizedPrompt
         let submittedMaximumTokens = maximumResponseTokens
+        let assistantMessageID = UUID()
+        transcript.append(
+            AppleLanguageTranscriptMessage(
+                role: .user,
+                content: submittedPrompt
+            )
+        )
+        transcript.append(
+            AppleLanguageTranscriptMessage(
+                id: assistantMessageID,
+                role: .assistant,
+                content: "",
+                state: .pending
+            )
+        )
+        prompt = ""
         response = ""
         isGenerating = true
         statusMessage = "Generating locally with \(example.title)…"
@@ -98,7 +116,8 @@ final class AppleLanguageWorkspaceModel {
             await self.performGeneration(
                 prompt: submittedPrompt,
                 maximumResponseTokens: submittedMaximumTokens,
-                runToken: runToken
+                runToken: runToken,
+                assistantMessageID: assistantMessageID
             )
         }
     }
@@ -117,8 +136,9 @@ final class AppleLanguageWorkspaceModel {
         do {
             try await engine.resetSession()
             response = ""
+            transcript = []
             clearError()
-            statusMessage = "Started a fresh Qwen session."
+            statusMessage = "Started a fresh \(example.title) session."
         } catch {
             present(error)
         }
@@ -135,7 +155,8 @@ final class AppleLanguageWorkspaceModel {
     private func performGeneration(
         prompt: String,
         maximumResponseTokens: Int,
-        runToken: CoreAIRuntimeRunToken
+        runToken: CoreAIRuntimeRunToken,
+        assistantMessageID: UUID
     ) async {
         defer {
             generationTask = nil
@@ -149,17 +170,42 @@ final class AppleLanguageWorkspaceModel {
             )
             try Task.checkCancellation()
             response = generated
+            updateAssistantMessage(
+                id: assistantMessageID,
+                content: generated,
+                state: .complete
+            )
             clearError()
             statusMessage = "Generated \(generated.count) characters on device."
             runCoordinator.succeed(runToken, summary: statusMessage)
         } catch is CancellationError {
             response = ""
             statusMessage = "Generation canceled."
+            updateAssistantMessage(
+                id: assistantMessageID,
+                content: "",
+                state: .canceled
+            )
             runCoordinator.cancel(runToken, summary: statusMessage)
         } catch {
             runCoordinator.fail(runToken, error: error)
+            updateAssistantMessage(
+                id: assistantMessageID,
+                content: "",
+                state: .failed(error.localizedDescription)
+            )
             present(error)
         }
+    }
+
+    private func updateAssistantMessage(
+        id: UUID,
+        content: String,
+        state: AppleLanguageTranscriptMessage.State
+    ) {
+        guard let index = transcript.firstIndex(where: { $0.id == id }) else { return }
+        transcript[index].content = content
+        transcript[index].state = state
     }
 
     private func present(_ error: any Error) {

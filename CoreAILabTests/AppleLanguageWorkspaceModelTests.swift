@@ -17,6 +17,10 @@ struct AppleLanguageWorkspaceModelTests {
 
         #expect(await engine.requests == [.init(prompt: "Why local?", maximumTokens: 64)])
         #expect(workspace.response == "On-device AI keeps data local.")
+        #expect(workspace.prompt.isEmpty)
+        #expect(workspace.transcript.map(\.role) == [.user, .assistant])
+        #expect(workspace.transcript.map(\.content) == ["Why local?", "On-device AI keeps data local."])
+        #expect(workspace.transcript.last?.state == .complete)
         #expect(!workspace.isShowingError)
         #expect(workspace.runCoordinator.history.first?.state == .succeeded)
         #expect(workspace.runCoordinator.history.first?.timingClass == .cold)
@@ -49,6 +53,7 @@ struct AppleLanguageWorkspaceModelTests {
         await workspace.resetSession()
 
         #expect(workspace.response.isEmpty)
+        #expect(workspace.transcript.isEmpty)
         #expect(await engine.resetCount == 1)
     }
 
@@ -67,8 +72,28 @@ struct AppleLanguageWorkspaceModelTests {
         await waitForGeneration(workspace)
 
         #expect(workspace.response.isEmpty)
+        #expect(workspace.transcript.last?.state == .canceled)
         #expect(workspace.statusMessage == "Generation canceled.")
         #expect(workspace.runCoordinator.history.first?.state == .canceled)
+    }
+
+    @Test
+    func failedGenerationMarksTheAssistantTurnWithoutDroppingTheUserPrompt() async {
+        let engine = AppleLanguageGeneratorStub(
+            response: "Unused",
+            failure: AppleLanguageGeneratorStubError.generationFailed
+        )
+        let workspace = AppleLanguageWorkspaceModel(example: .qwen3_0_6B, engine: engine)
+        await workspace.loadModel(from: URL(filePath: "/tmp/qwen"))
+        workspace.prompt = "Will this fail?"
+
+        workspace.startGeneration()
+        await waitForGeneration(workspace)
+
+        #expect(workspace.transcript.map(\.role) == [.user, .assistant])
+        #expect(workspace.transcript.first?.content == "Will this fail?")
+        #expect(workspace.transcript.last?.state == .failed("The language model failed during generation."))
+        #expect(workspace.isShowingError)
     }
 
     @Test
@@ -104,13 +129,19 @@ private actor AppleLanguageGeneratorStub: AppleLanguageGenerating {
 
     private let response: String
     private let responseDelay: Duration?
+    private let failure: (any Error)?
     private(set) var requests: [Request] = []
     private(set) var resetCount = 0
     private var isLoaded = false
 
-    init(response: String, responseDelay: Duration? = nil) {
+    init(
+        response: String,
+        responseDelay: Duration? = nil,
+        failure: (any Error)? = nil
+    ) {
         self.response = response
         self.responseDelay = responseDelay
+        self.failure = failure
     }
 
     func loadModel(at url: URL) throws {
@@ -126,6 +157,9 @@ private actor AppleLanguageGeneratorStub: AppleLanguageGenerating {
         if let responseDelay {
             try await Task.sleep(for: responseDelay)
         }
+        if let failure {
+            throw failure
+        }
         return response
     }
 
@@ -137,8 +171,14 @@ private actor AppleLanguageGeneratorStub: AppleLanguageGenerating {
 
 private enum AppleLanguageGeneratorStubError: LocalizedError {
     case invalidModel
+    case generationFailed
 
     var errorDescription: String? {
-        "The replacement language-model bundle is invalid."
+        switch self {
+        case .invalidModel:
+            "The replacement language-model bundle is invalid."
+        case .generationFailed:
+            "The language model failed during generation."
+        }
     }
 }
