@@ -77,9 +77,7 @@ enum CoreAIRuntimeArtifactValidator {
                 return nil
             }
         case .appleLanguage:
-            return AppleLanguageExample(resourceBundleURL: syntheticURL) == .qwen3_0_6B
-                ? "qwen3-0.6b"
-                : nil
+            return AppleLanguageExample(resourceBundleURL: syntheticURL)?.modelIdentifier
         case .appleObjectDetection:
             let normalized = artifactName.lowercased().replacing("_", with: "-")
             return normalized.contains("yolos-tiny") ? "yolos-tiny" : nil

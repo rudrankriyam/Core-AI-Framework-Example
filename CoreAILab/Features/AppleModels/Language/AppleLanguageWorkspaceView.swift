@@ -51,37 +51,21 @@ struct AppleLanguageWorkspaceView: View {
                         .textSelection(.enabled)
                 }
                 LabeledContent("iOS export") {
-                    Text(workspace.example.iOSExportCommand)
-                        .font(.body.monospaced())
-                        .textSelection(.enabled)
+                    if let iOSExportCommand = workspace.example.iOSExportCommand {
+                        Text(iOSExportCommand)
+                            .font(.body.monospaced())
+                            .textSelection(.enabled)
+                    } else {
+                        Label("No pinned iOS recipe in this catalog snapshot", systemImage: "iphone.slash")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } header: {
                 Label("Model Bundle", systemImage: "shippingbox")
             }
 
-            Section {
-                TextField("Ask Qwen", text: $workspace.prompt, axis: .vertical)
-                    .lineLimit(3...8)
-                    .disabled(!workspace.canEditGenerationInputs)
-                Stepper(
-                    "Maximum response tokens: \(workspace.maximumResponseTokens)",
-                    value: $workspace.maximumResponseTokens,
-                    in: 1...512,
-                    step: 16
-                )
-                .disabled(!workspace.canEditGenerationInputs)
-
-#if !os(macOS)
-                ViewThatFits(in: .horizontal) {
-                    generationActions(axis: .horizontal)
-                    generationActions(axis: .vertical)
-                }
-#endif
-            } header: {
-                Label("Prompt", systemImage: "text.bubble")
-            }
-
-            AppleLanguageResponseView(response: workspace.response)
+            AppleLanguageChatTranscriptView(messages: workspace.transcript)
+            AppleLanguagePromptComposerView(workspace: workspace)
         }
         .formStyle(.grouped)
         .navigationTitle("\(workspace.example.title) Language Model")
@@ -96,7 +80,7 @@ struct AppleLanguageWorkspaceView: View {
                         action: workspace.cancelGeneration
                     )
                 } else {
-                    Button("Generate", systemImage: "play.fill", action: workspace.startGeneration)
+                    Button("Send", systemImage: "arrow.up", action: workspace.startGeneration)
                         .disabled(!workspace.canGenerate)
                         .help(workspace.statusMessage)
                 }
@@ -146,29 +130,11 @@ struct AppleLanguageWorkspaceView: View {
 
     private func modelActions(axis: Axis) -> some View {
         adaptiveLayout(axis: axis) {
-            Button("Import Qwen Bundle", systemImage: "shippingbox", action: importModel)
+            Button("Import Language Bundle", systemImage: "shippingbox", action: importModel)
             Button("New Session", systemImage: "arrow.counterclockwise", action: resetSession)
                 .disabled(workspace.modelName == nil || workspace.isBusy)
         }
     }
-
-#if !os(macOS)
-    private func generationActions(axis: Axis) -> some View {
-        adaptiveLayout(axis: axis) {
-            Button("Generate", systemImage: "play.fill", action: workspace.startGeneration)
-                .buttonStyle(.borderedProminent)
-                .disabled(!workspace.canGenerate)
-            if workspace.isGenerating {
-                Button(
-                    "Cancel",
-                    systemImage: "stop.fill",
-                    role: .cancel,
-                    action: workspace.cancelGeneration
-                )
-            }
-        }
-    }
-#endif
 
     private func adaptiveLayout<Content: View>(
         axis: Axis,
