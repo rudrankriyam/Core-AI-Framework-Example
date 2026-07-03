@@ -37,9 +37,11 @@ actor AppleObjectDetectorEngine: AppleObjectDetecting {
     }
 }
 
-// ObjectDetector is a value wrapper around Core AI runtime handles, and its
-// inference function supports concurrent calls. Keep that unchecked boundary
-// local instead of adding a retroactive conformance to Apple's public type.
+// Safe: ObjectDetector is a value wrapper around Core AI runtime handles, and
+// its inference function supports concurrent calls; instances are additionally
+// confined to AppleObjectDetectorEngine's actor-isolated methods. Keep that
+// unchecked boundary local instead of adding a retroactive conformance to
+// Apple's public type.
 private struct SendableObjectDetector: @unchecked Sendable {
     let value: ObjectDetector
 }

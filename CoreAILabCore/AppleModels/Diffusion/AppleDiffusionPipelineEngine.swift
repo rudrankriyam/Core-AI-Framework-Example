@@ -2,6 +2,9 @@ import CoreAIDiffusionPipeline
 import Foundation
 
 actor AppleDiffusionPipelineEngine: AppleDiffusionGenerating {
+    // Safe: all stored properties are immutable after init, and the class is
+    // only stored on this actor; deinit merely balances the security-scoped
+    // access started in init, so there is no shared mutable state to race on.
     private final class ScopedResourceLease: @unchecked Sendable {
         let url: URL
         private let isAccessing: Bool

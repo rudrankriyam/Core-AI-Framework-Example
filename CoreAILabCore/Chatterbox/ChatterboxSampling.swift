@@ -1,37 +1,62 @@
 import Foundation
+import os
 
+/// A deterministic SplitMix64-based generator whose mutable state is guarded by
+/// an unfair lock, which is what makes the `@unchecked Sendable` conformance
+/// sound. Draw order still determines the sequence, so callers that need
+/// reproducibility must serialize their draws (the Chatterbox engine does, by
+/// confining each generator to a single generation pass).
 final class ChatterboxRandomGenerator: @unchecked Sendable, RandomNumberGenerator {
-    private var state: UInt64
-    private var spareNormal: Double?
+    private struct State {
+        var state: UInt64
+        var spareNormal: Double?
+    }
+
+    private let protectedState: OSAllocatedUnfairLock<State>
 
     init(seed: UInt64) {
-        state = seed
+        protectedState = OSAllocatedUnfairLock(
+            initialState: State(state: seed, spareNormal: nil)
+        )
     }
 
     func next() -> UInt64 {
-        state &+= 0x9E3779B97F4A7C15
-        var value = state
+        protectedState.withLock { Self.nextValue(&$0) }
+    }
+
+    func nextUnitDouble() -> Double {
+        protectedState.withLock { Self.nextUnitDouble(&$0) }
+    }
+
+    func nextNormal() -> Double {
+        protectedState.withLock { state in
+            if let spareNormal = state.spareNormal {
+                state.spareNormal = nil
+                return spareNormal
+            }
+
+            let first = max(
+                Self.nextUnitDouble(&state),
+                Double.leastNonzeroMagnitude
+            )
+            let second = Self.nextUnitDouble(&state)
+            let magnitude = sqrt(-2 * log(first))
+            let angle = 2 * Double.pi * second
+            state.spareNormal = magnitude * sin(angle)
+            return magnitude * cos(angle)
+        }
+    }
+
+    private static func nextValue(_ state: inout State) -> UInt64 {
+        state.state &+= 0x9E3779B97F4A7C15
+        var value = state.state
         value = (value ^ (value >> 30)) &* 0xBF58476D1CE4E5B9
         value = (value ^ (value >> 27)) &* 0x94D049BB133111EB
         return value ^ (value >> 31)
     }
 
-    func nextUnitDouble() -> Double {
-        Double(next() >> 11) * 0x1.0p-53
-    }
-
-    func nextNormal() -> Double {
-        if let spareNormal {
-            self.spareNormal = nil
-            return spareNormal
-        }
-
-        let first = max(nextUnitDouble(), Double.leastNonzeroMagnitude)
-        let second = nextUnitDouble()
-        let magnitude = sqrt(-2 * log(first))
-        let angle = 2 * Double.pi * second
-        spareNormal = magnitude * sin(angle)
-        return magnitude * cos(angle)
+    private static func nextUnitDouble(_ state: inout State) -> Double {
+        Double(nextValue(&state) >> 11) * 0x1.0p-53
     }
 }
 

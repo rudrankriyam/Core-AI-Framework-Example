@@ -126,14 +126,38 @@ actor CoreAIConversionProcessRunner {
 
     private func stop(_ process: Process) async {
         guard process.isRunning else { return }
+
         process.interrupt()
-        try? await Task.sleep(for: .seconds(1))
-        if process.isRunning {
-            process.terminate()
+        if await waitForExit(of: process, within: .seconds(1)) { return }
+
+        process.terminate()
+        if await waitForExit(of: process, within: .seconds(1)) { return }
+
+        kill(process.processIdentifier, SIGKILL)
+        _ = await waitForExit(of: process, within: .seconds(1))
+    }
+
+    /// Waits for the process to exit without blocking the actor. Polling is
+    /// used because `execute` already owns the process's `terminationHandler`,
+    /// so installing a second handler here would break the termination stream.
+    /// Returns `false` as soon as the grace period lapses (or the surrounding
+    /// task is cancelled) so the caller can escalate to the next signal.
+    private func waitForExit(
+        of process: Process,
+        within gracePeriod: Duration
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: gracePeriod)
+        while process.isRunning {
+            guard clock.now < deadline else { return false }
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+            } catch {
+                // Cancelled: skip the remaining grace period and escalate.
+                return !process.isRunning
+            }
         }
-        if process.isRunning {
-            process.waitUntilExit()
-        }
+        return true
     }
 
     private func childEnvironment(for executableURL: URL) -> [String: String] {

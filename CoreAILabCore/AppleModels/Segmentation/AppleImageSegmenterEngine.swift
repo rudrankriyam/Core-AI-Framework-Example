@@ -72,6 +72,9 @@ actor AppleImageSegmenterEngine: AppleImageSegmenting {
     }
 }
 
+// Safe: ImageSegmenter is not Sendable, but every instance is created and
+// queried exclusively from AppleImageSegmenterEngine's actor-isolated methods,
+// so the wrapped value never crosses an isolation boundary concurrently.
 private struct SendableImageSegmenter: @unchecked Sendable {
     let value: ImageSegmenter
 }
