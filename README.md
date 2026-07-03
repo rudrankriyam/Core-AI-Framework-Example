@@ -164,6 +164,7 @@ Detailed conversion and evidence commands live in:
 
 - [`Conversion/Chatterbox/README.md`](Conversion/Chatterbox/README.md)
 - [`Conversion/Diarization/README.md`](Conversion/Diarization/README.md)
+- [`Documentation/MODEL_ASSETS.md`](Documentation/MODEL_ASSETS.md)
 
 ## For Contributors and Agents
 
