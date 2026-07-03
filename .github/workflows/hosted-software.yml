@@ -38,6 +38,9 @@ jobs:
       - name: Validate the versioned CI matrix
         run: python3 Scripts/ci_matrix.py validate
 
+      - name: Verify large assets stay in Git LFS
+        run: python3 Scripts/check_large_files.py
+
       - name: Compile repository Python tooling
         run: python3 -m compileall -q Scripts
 
